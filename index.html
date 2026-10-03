@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>ColorADD Kids Camera</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* Custom CSS animations and dynamic full-screen layout rules */
+    body {
+      font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      touch-action: manipulation;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    /* Pulse animation for crosshair target */
+    @keyframes pulse-ring {
+      0% { transform: scale(0.95); opacity: 0.8; }
+      50% { transform: scale(1.05); opacity: 1; }
+      100% { transform: scale(0.95); opacity: 0.8; }
+    }
+    .crosshair-ring {
+      animation: pulse-ring 2s infinite ease-in-out;
+    }
+  </style>
+</head>
+<body class="bg-black text-white h-screen w-screen overflow-hidden flex flex-col justify-between">
+
+  <!-- Top Bar / App Header -->
+  <header class="absolute top-0 left-0 right-0 z-20 p-4 bg-gradient-to-b from-black/80 to-transparent flex justify-between items-center">
+    <div class="flex items-center gap-2">
+      <div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center font-bold text-lg">C</div>
+      <h1 class="text-lg font-bold tracking-wide">ColorADD Scanner</h1>
+    </div>
+    
+    <!-- Audio toggle button -->
+    <button id="ttsToggleBtn" class="bg-slate-800/80 backdrop-blur-md border border-slate-600 text-white px-4 py-2 rounded-full flex items-center gap-2 active:scale-95 transition-transform">
+      <span id="ttsIcon">🔊</span>
+      <span id="ttsText" class="text-xs font-semibold">Voz Activada</span>
+    </button>
+  </header>
+
+  <!-- Camera Viewport & Center Target -->
+  <main class="relative flex-1 w-full h-full flex items-center justify-center overflow-hidden bg-slate-900">
+    <!-- Real Camera Feed -->
+    <video id="cameraVideo" autoplay playsinline muted class="absolute inset-0 w-full h-full object-cover"></video>
+
+    <!-- Fallback Notice (Shown if camera is unavailable or denied) -->
+    <div id="cameraFallback" class="hidden absolute inset-0 bg-slate-900 z-10 flex flex-col items-center justify-center p-6 text-center">
+      <div class="text-5xl mb-4">📷</div>
+      <h2 class="text-xl font-bold mb-2 text-red-400">Cámara no disponible</h2>
+      <p class="text-sm text-slate-300 max-w-xs mb-6">Asegúrate de permitir el acceso a la cámara o prueba la simulación interactiva a continuación.</p>
+      
+      <!-- Interactive Fallback Simulation Color Buttons -->
+      <div class="grid grid-cols-3 gap-3 w-full max-w-xs">
+        <button onclick="simulateColor(255, 40, 40)" class="p-3 bg-red-600 rounded-xl font-bold text-xs active:scale-95">Rojo</button>
+        <button onclick="simulateColor(255, 215, 0)" class="p-3 bg-yellow-400 text-black rounded-xl font-bold text-xs active:scale-95">Amarillo</button>
+        <button onclick="simulateColor(30, 120, 255)" class="p-3 bg-blue-600 rounded-xl font-bold text-xs active:scale-95">Azul</button>
+        <button onclick="simulateColor(40, 200, 80)" class="p-3 bg-green-600 rounded-xl font-bold text-xs active:scale-95">Verde</button>
+        <button onclick="simulateColor(255, 140, 0)" class="p-3 bg-orange-500 rounded-xl font-bold text-xs active:scale-95">Naranja</button>
+        <button onclick="simulateColor(160, 32, 240)" class="p-3 bg-purple-600 rounded-xl font-bold text-xs active:scale-95">Púrpura</button>
+      </div>
+    </div>
+
+    <!-- Center Reticle / Target Aim for Color Sampling -->
+    <div class="relative z-10 flex flex-col items-center justify-center pointer-events-none">
+      <div class="crosshair-ring w-20 h-20 border-4 border-white border-dashed rounded-full flex items-center justify-center shadow-2xl">
+        <div class="w-3 h-3 bg-red-500 rounded-full border-2 border-white"></div>
+      </div>
+      <span class="mt-2 bg-black/60 backdrop-blur-md px-3 py-1 rounded-full text-[10px] font-medium tracking-wider text-slate-200">
+        APUNTA AL OBJETO
+      </span>
+    </div>
+
+    <!-- Hidden Offscreen Canvas for Sampling Pixels -->
+    <canvas id="samplerCanvas" class="hidden"></canvas>
+  </main>
+
+  <!-- Bottom Info Bar / Result Card -->
+  <footer class="relative z-20 p-4 bg-slate-950/90 backdrop-blur-lg border-t border-slate-800 rounded-t-3xl shadow-2xl">
+    <div class="max-w-md mx-auto flex items-center gap-4">
+      
+      <!-- ColorADD Symbol Vector Canvas Display -->
+      <div class="w-20 h-20 bg-black border-2 border-slate-700 rounded-2xl flex items-center justify-center shrink-0 p-1 shadow-inner">
+        <canvas id="colorAddCanvas" width="120" height="120" class="w-full h-full"></canvas>
+      </div>
+
+      <!-- Color Name & Audio Action -->
+      <div class="flex-1 min-w-0">
+        <span class="text-[10px] font-bold text-slate-400 tracking-widest uppercase">Color Detectado</span>
+        <h2 id="colorNameDisplay" class="text-2xl font-black text-white truncate">Detectando...</h2>
+        <div id="sampleColorSwatch" class="w-12 h-2 rounded-full mt-1 border border-white/20 transition-all duration-300"></div>
+      </div>
+
+      <!-- Large Tap-to-Speak Button -->
+      <button id="speakNowBtn" class="w-14 h-14 bg-blue-600 active:bg-blue-700 text-white rounded-full flex items-center justify-center shadow-lg active:scale-90 transition-transform shrink-0">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+        </svg>
+      </button>
+
+    </div>
+  </footer>
+
+  <script>
+    // State Variables
+    let isTtsEnabled = true;
+    let currentColor = { name: "Cargando...", symbol: "unknown", r: 0, g: 0, b: 0 };
+    let lastSpokenName = "";
+    let speechDebounceTimer = null;
+
+    // Elements Reference
+    const video = document.getElementById('cameraVideo');
+    const samplerCanvas = document.getElementById('samplerCanvas');
+    const samplerCtx = samplerCanvas.getContext('2d', { willReadFrequently: true });
+    const colorAddCanvas = document.getElementById('colorAddCanvas');
+    const colorAddCtx = colorAddCanvas.getContext('2d');
+    const colorNameDisplay = document.getElementById('colorNameDisplay');
+    const sampleColorSwatch = document.getElementById('sampleColorSwatch');
+    const cameraFallback = document.getElementById('cameraFallback');
+    const ttsToggleBtn = document.getElementById('ttsToggleBtn');
+    const ttsIcon = document.getElementById('ttsIcon');
+    const ttsText = document.getElementById('ttsText');
+    const speakNowBtn = document.getElementById('speakNowBtn');
+
+    // 1. Initialize Real Camera Feed
+    async function initCamera() {
+      try {
+        const constraints = {
+          video: {
+            facingMode: { ideal: 'environment' },
+            width: { ideal: 640 },
+            height: { ideal: 480 }
+          },
+          audio: false
+        };
+
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        video.srcObject = stream;
+        video.onloadedmetadata = () => {
+          video.play();
+          requestAnimationFrame(processFrame);
+        };
+      } catch (err) {
+        console.warn("Camera failed to load or permission denied:", err);
+        cameraFallback.classList.remove('hidden');
+        colorNameDisplay.innerText = "Selecciona un color";
+      }
+    }
+
+    // 2. Real-time Frame Sampling Loop
+    function processFrame() {
+      if (video.readyState === video.HAVE_ENOUGH_DATA) {
+        samplerCanvas.width = video.videoWidth;
+        samplerCanvas.height = video.videoHeight;
+
+        // Draw video frame to hidden canvas
+        samplerCtx.drawImage(video, 0, 0, samplerCanvas.width, samplerCanvas.height);
+
+        // Sample 5x5 pixel cluster in the center for averaged RGB accuracy
+        const centerX = Math.floor(samplerCanvas.width / 2);
+        const centerY = Math.floor(samplerCanvas.height / 2);
+        const sampleRadius = 2;
+        const imgData = samplerCtx.getImageData(centerX - sampleRadius, centerY - sampleRadius, 5, 5).data;
+
+        let totalR = 0, totalG = 0, totalB = 0;
+        const count = imgData.length / 4;
+
+        for (let i = 0; i < imgData.length; i += 4) {
+          totalR += imgData[i];
+          totalG += imgData[i + 1];
+          totalB += imgData[i + 2];
+        }
+
+        const avgR = Math.round(totalR / count);
+        const avgG = Math.round(totalG / count);
+        const avgB = Math.round(totalB / count);
+
+        updateColorDetection(avgR, avgG, avgB);
+      }
+
+      requestAnimationFrame(processFrame);
+    }
+
+    // 3. Fallback color simulation for desktop / denied cameras
+    function simulateColor(r, g, b) {
+      updateColorDetection(r, g, b);
+      speakCurrentColor(true);
+    }
+
+    // 4. RGB -> HSL -> ColorADD Converter & Classifier
+    function updateColorDetection(r, g, b) {
+      const result = classifyRgbToColorAdd(r, g, b);
+      currentColor = { ...result, r, g, b };
+
+      // Update UI Text & Visual Swatch
+      colorNameDisplay.innerText = result.name;
+      sampleColorSwatch.style.backgroundColor = `rgb(${r}, ${g}, ${b})`;
+
+      // Render Vector ColorADD Symbol
+      drawColorAddSymbol(colorAddCtx, result.symbol);
+
+      // Speak automatically if changed and TTS enabled (debounced)
+      if (isTtsEnabled && result.name !== lastSpokenName) {
+        clearTimeout(speechDebounceTimer);
+        speechDebounceTimer = setTimeout(() => {
+          speakCurrentColor();
+        }, 1200); // 1.2s stability delay before auto-speaking
+      }
+    }
+
+    function classifyRgbToColorAdd(r, g, b) {
+      const rN = r / 255, gN = g / 255, bN = b / 255;
+      const max = Math.max(rN, gN, bN), min = Math.min(rN, gN, bN);
+      let h = 0, s = 0, l = (max + min) / 2;
+
+      if (max !== min) {
+        const d = max - min;
+        s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+        switch (max) {
+          case rN: h = (gN - bN) / d + (gN < bN ? 6 : 0); break;
+          case gN: h = (bN - rN) / d + 2; break;
+          case bN: h = (rN - gN) / d + 4; break;
+        }
+        h /= 6;
+      }
+
+      const hue = h * 360;
+
+      // Achromatic neutrals
+      if (l < 0.15) return { name: "Negro", symbol: "black" };
+      if (l > 0.85 && s < 0.2) return { name: "Blanco", symbol: "white" };
+      if (s < 0.18) return { name: "Gris", symbol: "gray" };
+
+      // Chromatic spectrum
+      if (hue >= 345 || hue < 15) return { name: "Rojo", symbol: "red" };
+      if (hue >= 15 && hue < 45) return { name: "Naranja", symbol: "orange" };
+      if (hue >= 45 && hue < 70) return { name: "Amarillo", symbol: "yellow" };
+      if (hue >= 70 && hue < 165) return { name: "Verde", symbol: "green" };
+      if (hue >= 165 && hue < 260) return { name: "Azul", symbol: "blue" };
+      if (hue >= 260 && hue < 310) return { name: "Púrpura", symbol: "purple" };
+      if (hue >= 310 && hue < 345) return { name: "Rosa", symbol: "red" };
+
+      return { name: "Indefinido", symbol: "unknown" };
+    }
+
+    // 5. Vectorial ColorADD Canvas Rendering Engine
+    function drawColorAddSymbol(ctx, symbolType) {
+      const w = ctx.canvas.width;
+      const h = ctx.canvas.height;
+
+      ctx.clearRect(0, 0, w, h);
+      ctx.strokeStyle = "#FFFFFF";
+      ctx.fillStyle = "#FFFFFF";
+      ctx.lineWidth = 10;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+
+      switch (symbolType) {
+        case "red": // Diagonal \
+          ctx.beginPath();
+          ctx.moveTo(w * 0.25, h * 0.25);
+          ctx.lineTo(w * 0.75, h * 0.75);
+          ctx.stroke();
+          break;
+
+        case "yellow": // Diagonal /
+          ctx.beginPath();
+          ctx.moveTo(w * 0.75, h * 0.25);
+          ctx.lineTo(w * 0.25, h * 0.75);
+          ctx.stroke();
+          break;
+
+        case "blue": // Downward Triangle ▼
+          ctx.beginPath();
+          ctx.moveTo(w * 0.2, h * 0.3);
+          ctx.lineTo(w * 0.8, h * 0.3);
+          ctx.lineTo(w * 0.5, h * 0.8);
+          ctx.closePath();
+          ctx.fill();
+          break;
+
+        case "green": // Yellow + Blue -> Upward Triangle ▲
+          ctx.beginPath();
+          ctx.moveTo(w * 0.5, h * 0.2);
+          ctx.lineTo(w * 0.8, h * 0.75);
+          ctx.lineTo(w * 0.2, h * 0.75);
+          ctx.closePath();
+          ctx.fill();
+          break;
+
+        case "orange": // Yellow + Red -> Left Chevron <
+          ctx.beginPath();
+          ctx.moveTo(w * 0.7, h * 0.25);
+          ctx.lineTo(w * 0.3, h * 0.5);
+          ctx.lineTo(w * 0.7, h * 0.75);
+          ctx.stroke();
+          break;
+
+        case "purple": // Red + Blue -> Right Chevron >
+          ctx.beginPath();
+          ctx.moveTo(w * 0.3, h * 0.25);
+          ctx.lineTo(w * 0.7, h * 0.5);
+          ctx.lineTo(w * 0.3, h * 0.75);
+          ctx.stroke();
+          break;
+
+        case "white": // Empty Square
+          ctx.strokeRect(w * 0.25, h * 0.25, w * 0.5, h * 0.5);
+          break;
+
+        case "black": // Solid Square
+          ctx.fillRect(w * 0.25, h * 0.25, w * 0.5, h * 0.5);
+          break;
+
+        case "gray": // Hollow Square with Center Dot
+          ctx.lineWidth = 6;
+          ctx.strokeRect(w * 0.25, h * 0.25, w * 0.5, h * 0.5);
+          ctx.fillRect(w * 0.4, h * 0.4, w * 0.2, h * 0.2);
+          break;
+
+        default: // Unknown / Loading
+          ctx.font = "bold 50px sans-serif";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText("?", w / 2, h / 2);
+          break;
+      }
+    }
+
+    // 6. Speech Synthesis Helper
+    function speakCurrentColor(force = false) {
+      if (!('speechSynthesis' in window)) return;
+      if (!isTtsEnabled && !force) return;
+
+      window.speechSynthesis.cancel(); // Interrupt prior speech
+      const utterance = new SpeechSynthesisUtterance(currentColor.name);
+      utterance.lang = 'es-ES';
+      utterance.rate = 0.95; // Friendly, clear pace for kids
+      window.speechSynthesis.speak(utterance);
+
+      lastSpokenName = currentColor.name;
+    }
+
+    // Event Listeners
+    ttsToggleBtn.addEventListener('click', () => {
+      isTtsEnabled = !isTtsEnabled;
+      ttsIcon.innerText = isTtsEnabled ? "🔊" : "🔇";
+      ttsText.innerText = isTtsEnabled ? "Voz Activada" : "Voz Silenciada";
+      if (isTtsEnabled) speakCurrentColor(true);
+    });
+
+    speakNowBtn.addEventListener('click', () => {
+      speakCurrentColor(true);
+    });
+
+    // Start App
+    window.addEventListener('load', initCamera);
+  </script>
+</body>
+</html>
